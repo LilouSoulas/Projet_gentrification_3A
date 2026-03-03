@@ -1,0 +1,132 @@
+---
+title: "RATP"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(readxl)
+library(tidyverse)
+```
+
+[RATP1](https://prim.iledefrance-mobilites.fr/fr/jeux-de-donnees/emplacement-des-gares-idf) = les bases [par ligne]{.underline} (donc plus d'arrêts)
+
+[RATP2](https://prim.iledefrance-mobilites.fr/fr/jeux-de-donnees/emplacement-des-gares-idf-data-generalisee) = arrêts "généralisés" donc un seul point par arrêt malgré correspondances
+
+```{r}
+
+acces_RATP <- st_read("/Users/maelieperier/OneDrive/3A/ENSAE/Proj_gentrification/RATP/acces/acces.shp") # ce sont les accès de métro et rer exclusivement (manque tram et bus) 
+
+arrets_RATP <- st_read("/Users/maelieperier/OneDrive/3A/ENSAE/Proj_gentrification/RATP/arrets/arrets.shp") %>% filter(ArRType == "bus" | ArRType == "tram") # arrets de bus et de tram 
+
+sf_21 <- st_read("Contours/CONTOURS-IRIS_2-1__SHP__FRA_2021-01-01/CONTOURS-IRIS/1_DONNEES_LIVRAISON_2021-06-00217/CONTOURS-IRIS_2-1_SHP_LAMB93_FXX-2021/CONTOURS-IRIS.shp") %>% filter(startsWith(as.character(INSEE_COM), "75")) 
+
+```
+
+```{r }
+acces_RATP <- st_transform(acces_RATP, st_crs(sf_21))
+access_paris <- acces_RATP %>%
+  st_filter(sf_21, .predicate = st_intersects)
+
+arrets_RATP <- st_transform(arrets_RATP, st_crs(sf_21))
+arrets_paris <- arrets_RATP %>%
+  st_filter(sf_21, .predicate = st_intersects)
+
+ggplot() +
+  geom_sf(data = sf_21) +
+  geom_sf(data = access_paris, color = "red", size = 0.5) +
+  labs(title = "Carte des accès de métro/RER") + 
+  theme_minimal()
+
+ggplot() +
+  geom_sf(data = sf_21) +
+  geom_sf(data = arrets_paris, color = "red", size = 0.5) +
+  labs(title = "Carte des arrêts RATP (bus - tram)") + 
+  theme_minimal()
+
+```
+
+À l'aide des informations du [site RATP](https://prim.iledefrance-mobilites.fr/fr/jeux-de-donnees/emplacement-des-gares-idf), on modifie le df pour annualiser et prendre en compte les ajouts d'arrêts
+
+```{r regrouper arrets tram/bus/metro et rer}
+
+ratp_paris <- bind_rows(access_paris %>% rename(Id = "AccId", "Version" = "AccVersion", "Created" = "AccCreated", "Changed" = "AccChanged", "Name" = "AccName"), arrets_paris %>% rename(Id = "ArRId", "Version" = "ArRVersion", "Created" = "ArRCreated", "Changed" = "ArRChanged", "Name" = "ArRName"))
+
+
+annees <- 2015:2025
+nb_annees <- length(annees)
+
+ratp_paris_annuel <- ratp_paris %>%
+  # On répète chaque ligne autant de fois qu'il y a d'années
+  uncount(nb_annees, .id = "id_temp") %>%
+  # On remplace l'id temporaire par la vraie année
+  mutate(annee = annees[id_temp]) %>%
+  # On supprime l'id temporaire devenu inutile
+  select(-id_temp) %>% select(annee, Id, everything())
+
+```
+
+/!\\ pour l'instant on a mécaniquement mis une année par arrêt mais on a pas supprimé les arrêts qui n'existaient pas certaines années
+
+```{r modification nouveaux arrêts}
+
+ggplot() +
+  geom_sf(data = sf_21) +
+  geom_sf(data = ratp_paris_annuel, color = "red", size = 0.5) +
+  labs(title = "Carte des arrêts RATP (bus - tram)") + 
+  theme_minimal()
+
+ratp_paris_annuel <- filter(!)
+```
+
+|           |          |           |                                              |                                   |
+|-----------|----------|-----------|----------------------------------------------|-----------------------------------|
+| **Année** | **Mode** | **Ligne** | **Station**                                  | **Type d'événement**              |
+| **2015**  | RER      | **E**     | Rosa Parks                                   | **Création** (Nouvelle gare)      |
+| **2017**  | Tram     | **T11**   | Épinay - Le Bourget (Toute la ligne)         | **Création** (Nouvelle ligne)     |
+| **2018**  | Tram     | **T3b**   | Porte d'Asnières - Marguerite Long           | **Prolongement**                  |
+| **2018**  | Tram     | **T3b**   | Square Sainte-Odile                          | **Prolongement**                  |
+| **2018**  | Tram     | **T3b**   | Porte de Courcelles                          | **Prolongement**                  |
+| **2020**  | Métro    | **14**    | Pont Cardinet                                | **Prolongement Nord**             |
+| **2020**  | Métro    | **14**    | Porte de Clichy                              | **Prolongement Nord**             |
+| **2020**  | Métro    | **14**    | Saint-Ouen                                   | **Prolongement Nord**             |
+| **2020**  | Métro    | **14**    | Mairie de Saint-Ouen                         | **Prolongement Nord**             |
+| **2021**  | Tram     | **T9**    | Porte de Choisy (et 18 autres stations)      | **Création** (Nouvelle ligne)     |
+| **2022**  | Métro    | **4**     | Barbara                                      | **Prolongement Sud**              |
+| **2022**  | Métro    | **4**     | Bagneux - Lucie Aubrac                       | **Prolongement Sud**              |
+| **2022**  | Métro    | **12**    | Aimé Césaire                                 | **Prolongement Nord**             |
+| **2022**  | Métro    | **12**    | Mairie d'Aubervilliers                       | **Prolongement Nord**             |
+| **2023**  | Tram     | **T12**   | Massy - Évry (Toute la ligne)                | **Création** (Nouvelle ligne)     |
+| **2024**  | Métro    | **11**    | Serge Gainsbourg                             | **Prolongement Est**              |
+| **2024**  | Métro    | **11**    | Place Carnot                                 | **Prolongement Est**              |
+| **2024**  | Métro    | **11**    | Montreuil - Hôpital                          | **Prolongement Est**              |
+| **2024**  | Métro    | **11**    | La Dhuys                                     | **Prolongement Est**              |
+| **2024**  | Métro    | **11**    | Coteaux Beauclair                            | **Prolongement Est**              |
+| **2024**  | Métro    | **11**    | Rosny-Bois-Perrier                           | **Prolongement Est**              |
+| **2024**  | Métro    | **14**    | Saint-Denis Pleyel                           | **Prolongement Nord**             |
+| **2024**  | Métro    | **14**    | Maison Blanche                               | **Prolongement Sud**              |
+| **2024**  | Métro    | **14**    | Hôpital Bicêtre                              | **Prolongement Sud**              |
+| **2024**  | Métro    | **14**    | L'Haÿ-les-Roses                              | **Prolongement Sud**              |
+| **2024**  | Métro    | **14**    | Chevilly-Larue                               | **Prolongement Sud**              |
+| **2024**  | Métro    | **14**    | Thiais - Orly                                | **Prolongement Sud**              |
+| **2024**  | Métro    | **14**    | Aéroport d'Orly                              | **Prolongement Sud**              |
+| **2024**  | RER      | **E**     | Neuilly - Porte Maillot                      | **Prolongement Ouest**            |
+| **2024**  | RER      | **E**     | La Défense - Grande Arche                    | **Prolongement Ouest**            |
+| **2024**  | RER      | **E**     | Nanterre - La Folie                          | **Prolongement Ouest**            |
+| **2024**  | Tram     | **T3b**   | Square de la Chapelle (et 6 autres stations) | **Prolongement Ouest**            |
+| **2025**  | Métro    | **14**    | Villejuif - Gustave Roussy                   | **Création** (Ouverture différée) |
+| **2025**  | Métro    | **15**    | Pont de Sèvres (et tronçon Sud)              | **Création** (Lancement GPE)      |
+
+=\> Il faudrait au final un df qui par année liste les arrêts/accès

@@ -1,0 +1,207 @@
+---
+title: "base IRIS"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r packages}
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(readxl)
+```
+
+```{r iris rev}
+
+irisrev_15 <- read_excel("Filosofi/BASE_TD_FILO_DEC_IRIS_2015.xls") 
+irisrev_16 <- read_excel("Filosofi/BASE_TD_FILO_DEC_IRIS_2016.xls")
+irisrev_17 <- read_excel("Filosofi/BASE_TD_FILO_DEC_IRIS_2017.xlsx")
+irisrev_18 <- read_excel("Filosofi/BASE_TD_FILO_DEC_IRIS_2018.xlsx")
+irisrev_19 <- read_excel("Filosofi/BASE_TD_FILO_DEC_IRIS_2019.xlsx")
+irisrev_20 <- read_excel("Filosofi/BASE_TD_FILO_DEC_IRIS_2020.xlsx")
+irisrev_21 <- read_excel("Filosofi/BASE_TD_FILO_DEC_IRIS_2021.xlsx")
+
+
+annees_suffixe <- c("15", "16", "17", "18", "19", "20", "21")
+
+for (suffixe in annees_suffixe) {
+  
+  nom_objet <- paste0("irisrev_", suffixe)
+  
+  df_temp <- get(nom_objet)
+  
+  noms <- as.character(df_temp[5, ])
+  libelles <- as.character(df_temp[4, ])
+  
+  # Renommer, supprimer les headers et filtrer
+  df_temp <- df_temp %>%
+    setNames(noms) %>%
+    slice(6:n()) %>%
+    filter(str_starts(IRIS, "75")) %>%
+    mutate(across(-c(LIBIRIS, LIBCOM), as.numeric))
+  
+  names(libelles) <- names(df_temp)
+  for(i in seq_along(df_temp)) {
+    attr(df_temp[[i]], "label") <- libelles[i]
+  }
+  
+
+  assign(nom_objet, df_temp, envir = .GlobalEnv)
+  
+}
+```
+
+```{r}
+# Combien d'IRIS sont dans la base chaque année
+
+liste_iris <- lapply(paste0("irisrev_", c("15", "16", "17", "18", "19", "20", "21")), function(nom) {
+  df <- get(nom)
+  return(df$IRIS)
+})
+
+# 2. Trouver l'intersection (les codes présents dans TOUS les éléments de la liste)
+iris_communs <- Reduce(intersect, liste_iris)
+
+cat("Nombre d'IRIS communs aux 7 années :", length(iris_communs), "\n")
+# 868
+#iris_communs
+```
+
+```{r crée une base avec 2015 et 2021 + évolution}
+
+irisrev_1521 <- irisrev_15 %>% left_join(irisrev_21 %>% select(!c("LIBIRIS", "COM", "LIBCOM")), by = "IRIS")
+
+
+# On regarde l'évolution du revenu médian de chaque iris entre 2015 et 2021 en euros constants 2021 
+irisrev_1521 <- irisrev_1521%>%mutate(
+    DEC_MED15_constant = round(DEC_MED15 * 1.064465, 2),
+    evolution_reelle = round(((DEC_MED21 - DEC_MED15_constant) / DEC_MED15_constant) * 100, 3)
+  )
+
+irisrev_1521$evolution_reelle
+
+med15 = summary(irisrev_1521$DEC_MED15_constant)[[3]] # 32566
+med21 = summary(irisrev_1521$DEC_MED21)[[3]] # 34610
+evo_ville = round((med21 - med15)/med15 * 100, 2) 
+# Le revenu médian augmente de 6.28% entre 2015 et 2021 
+
+irisrev_1521 <- irisrev_1521 %>% mutate(
+  gentr_type = case_when(
+ DEC_MED15_constant < 0.98*med15 & evolution_reelle < 0.98*evo_ville  ~ "populaire", # ON PEUT CHANGER LES BANDWITH  
+ 
+ DEC_MED15_constant < 0.98*med15 & evolution_reelle > 1.02*evo_ville ~ "gentrifié", 
+ 
+ DEC_MED15_constant > 1.02*med15 ~ "aisé", 
+ TRUE ~ "autre"
+  
+))
+
+irisrev_1521 <- irisrev_1521 %>% select(IRIS, LIBIRIS, COM, LIBCOM, DEC_MED15, DEC_MED15_constant, DEC_MED21, evolution_reelle, gentr_type, everything())
+
+table(irisrev_1521$gentr_type)
+```
+
+Il y a 430 IRIS dont le revenu médian en 2015 constant est en dessus et au dessus de la médiane des revenus médians 15
+
+Si on prend une band de 5%, il y a 110 IRIS qui ont un revenu médian inclus dans l'intervalle ±5% de la médiane du revenu médian 15
+
+Si on prend une band de 2%, il y a 43 IRIS qui ont un revenu médian inclus dans l'intervalle ±5% de la médiane du revenu médian 15
+
+=\> On pourrait faire un degré de gentrification aussi avec un indice qui rend compte de l'écart en 2015 avec la médiane et l'écart de l'évolution avec l'évolution médiane
+
+```{r donnees géo}
+
+# BOUCLES CONTOURS 
+
+sf_21 <- st_read("Contours/CONTOURS-IRIS_2-1__SHP__FRA_2021-01-01/CONTOURS-IRIS/1_DONNEES_LIVRAISON_2021-06-00217/CONTOURS-IRIS_2-1_SHP_LAMB93_FXX-2021/CONTOURS-IRIS.shp") %>% filter(startsWith(as.character(INSEE_COM), "75")) 
+#%>% filter(TYP_IRIS == "H")
+
+
+
+```
+
+```{r verifier si les contours IRIS changenet }
+
+
+
+test_egalite <- st_equals(sf_data_10$geometry, (sf_data_22%>%filter(str_starts(INSEE_COM, "75")))$geometry, sparse = FALSE)
+
+
+comparaison <- inner_join(
+  sf_data_10 %>% as.data.frame(), 
+  sf_data_22 %>% as.data.frame(), 
+  join_by("DCOMIRIS" == "CODE_IRIS"), 
+  suffix = c("_10", "_22")
+)
+
+
+ggplot(sf_data_15["geometry"]) +
+  geom_sf() +
+  coord_sf(expand = FALSE, datum = NA) +
+  theme_minimal()
+
+ggplot(sf_data_22["geometry"]) +
+  geom_sf() +
+  coord_sf(expand = FALSE, datum = NA) +
+  theme_minimal()
+
+
+
+```
+
+```{r}
+
+
+geo_1521 <- irisrev_1521 %>% left_join(sf_21 %>% mutate(CODE_IRIS = as.numeric(CODE_IRIS)) %>% select("CODE_IRIS", "geometry") , join_by(IRIS==CODE_IRIS))
+geo_1521 <- st_as_sf(geo_1521, crs = 2154)
+
+Geo_1521 <- sf_21 %>% mutate(CODE_IRIS = as.numeric(CODE_IRIS)) %>% select("CODE_IRIS", "geometry") %>% left_join(irisrev_1521 %>% select("IRIS", "gentr_type"), join_by(CODE_IRIS==IRIS))
+
+
+ggplot(geo_1521["geometry"]) +
+  geom_sf(aes(fill = geo_1521$gentr_type), color = "black", size = 0.2) +  
+  scale_fill_manual(
+    values = c( "#DDCC77",  "grey",  "salmon",  "lightblue"))  +
+  coord_sf(expand = FALSE, datum = NA) +
+  labs(
+    fill = "Type de quartier"
+  ) + theme(plot.title = element_text(hjust = 0.5)) +
+  theme_minimal()
+
+#ggplot(Geo_1521["geometry"]) +
+ # geom_sf(aes(fill = Geo_1521$gentr_type), color = "black", size = 0.2) +  
+#  coord_sf(expand = FALSE, datum = NA) +
+#  theme_minimal()
+
+```
+
+-   Faire une boucle pour importer tous les doc revenus IRIS disponibles et les formater sur le même modèle que IRIS15
+
+-   Faire une boucle pour télécharger les contours de chaque année
+
+    -   <https://geoservices.ign.fr/contoursiris>
+
+-   Pour chaque année, merge les IRIS avec leurs contours géographiques
+
+-   gérer les données manquantes !!!!!
+
+-   Pour chaque année classer les IRIS entre en dessous de la médiane (- 5%) ; médiane et au dessus de la médiane (au dessus de 5%)
+
+-   Faire une base intertemporelle avec pour chaque IRIS les revenus médian (et autres infos) par année
+
+    -   en panel ? ou avec des colonnes par année ?
+
+-   graphique de l'évolution du revenu médian // quartiles de Paris au fil des années
+
+-   
+
+-   Regrouper les IRIS numérotés en 1 (les halles 1/2/3/4 = les halles) ??
