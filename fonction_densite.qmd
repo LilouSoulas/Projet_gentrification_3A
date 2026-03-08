@@ -1,0 +1,49 @@
+---
+title: "fonction_densite"
+format: html
+editor: visual
+---
+
+## Objectif de ce code
+
+Dans ce code, on cherche à créer une fonction qui a un polygone (périmètre géographique) associe une densité d'un certain type de points
+
+```{r fonction comptage pts par polygone}
+
+compter_points_par_polygone <- function(polygones, ...) {
+  
+  points_list <- list(...)
+  
+  result <- polygones
+  
+  for (nom in names(points_list)) {
+    points_sf <- points_list[[nom]]
+    
+    # Harmoniser les CRS
+    points_sf <- st_transform(points_sf, st_crs(polygones))
+    
+    # Compter les points dans chaque polygone
+    counts <- lengths(st_intersects(polygones, points_sf))
+    
+    result[[nom]] <- counts
+  }
+  
+  return(result)
+}
+```
+
+Pour un df avec des polygones et un df avec des points (base des arrêts de transports par ex ou bien des commerces / commerces de même type), la fonction compte le nmb de points dans le polygone. La sortie de la fonction est un df avec une ligne par polygone et une colonne par type de points que l'on cherche à compter
+
+Ici on fait le test avec le df polygone des IRIS mais à termes ce sera avec les polygones 3min / 5min...
+
+```{r test fonction}
+
+
+resultat <- compter_points_par_polygone(
+  polygones   = sf_21,
+  metro       = ratp_paris |> filter(Type == "metro"),
+  bus         = ratp_paris |> filter(Type == "bus")
+)
+
+
+```

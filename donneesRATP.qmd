@@ -19,6 +19,7 @@ library(ggplot2)
 library(stringr)
 library(readxl)
 library(tidyverse)
+library(lubridate)
 ```
 
 [RATP1](https://prim.iledefrance-mobilites.fr/fr/jeux-de-donnees/emplacement-des-gares-idf) = les bases [par ligne]{.underline} (donc plus d'arrêts)
@@ -33,6 +34,13 @@ arrets_RATP <- st_read("/Users/maelieperier/OneDrive/3A/ENSAE/Proj_gentrificatio
 
 sf_21 <- st_read("Contours/CONTOURS-IRIS_2-1__SHP__FRA_2021-01-01/CONTOURS-IRIS/1_DONNEES_LIVRAISON_2021-06-00217/CONTOURS-IRIS_2-1_SHP_LAMB93_FXX-2021/CONTOURS-IRIS.shp") %>% filter(startsWith(as.character(INSEE_COM), "75")) 
 
+zone_arret <- read.csv("/Users/maelieperier/OneDrive/3A/ENSAE/Proj_gentrification/RATP/zones-d-arrets.csv", sep = ";" )  %>% filter(startsWith(as.character(ZdAPostalRegion), "75")) 
+
+relation_acces <- read.csv("/Users/maelieperier/OneDrive/3A/ENSAE/Proj_gentrification/RATP/relations-acces.csv", sep = ";") %>% mutate(AccId = as.character(AccId))
+
+arrets_ligne <- read.csv("/Users/maelieperier/OneDrive/3A/ENSAE/Proj_gentrification/RATP/arrets-lignes.csv", sep = ";") %>% filter(Nom_commune == "Paris") %>% filter(!startsWith(as.character(shortName), "N"))
+
+
 ```
 
 ```{r }
@@ -44,89 +52,102 @@ arrets_RATP <- st_transform(arrets_RATP, st_crs(sf_21))
 arrets_paris <- arrets_RATP %>%
   st_filter(sf_21, .predicate = st_intersects)
 
-ggplot() +
-  geom_sf(data = sf_21) +
-  geom_sf(data = access_paris, color = "red", size = 0.5) +
-  labs(title = "Carte des accès de métro/RER") + 
-  theme_minimal()
 
-ggplot() +
-  geom_sf(data = sf_21) +
-  geom_sf(data = arrets_paris, color = "red", size = 0.5) +
-  labs(title = "Carte des arrêts RATP (bus - tram)") + 
-  theme_minimal()
 
 ```
 
 À l'aide des informations du [site RATP](https://prim.iledefrance-mobilites.fr/fr/jeux-de-donnees/emplacement-des-gares-idf), on modifie le df pour annualiser et prendre en compte les ajouts d'arrêts
 
-```{r regrouper arrets tram/bus/metro et rer}
-
-ratp_paris <- bind_rows(access_paris %>% rename(Id = "AccId", "Version" = "AccVersion", "Created" = "AccCreated", "Changed" = "AccChanged", "Name" = "AccName"), arrets_paris %>% rename(Id = "ArRId", "Version" = "ArRVersion", "Created" = "ArRCreated", "Changed" = "ArRChanged", "Name" = "ArRName"))
-
-
-annees <- 2015:2025
-nb_annees <- length(annees)
-
-ratp_paris_annuel <- ratp_paris %>%
-  # On répète chaque ligne autant de fois qu'il y a d'années
-  uncount(nb_annees, .id = "id_temp") %>%
-  # On remplace l'id temporaire par la vraie année
-  mutate(annee = annees[id_temp]) %>%
-  # On supprime l'id temporaire devenu inutile
-  select(-id_temp) %>% select(annee, Id, everything())
-
-```
-
 /!\\ pour l'instant on a mécaniquement mis une année par arrêt mais on a pas supprimé les arrêts qui n'existaient pas certaines années
 
-```{r modification nouveaux arrêts}
+```{r lier les accès à nom des arrêts}
+access_noms <- access_paris %>% mutate(AccId = as.character(AccId)) %>% 
+  # On lie l'accès à son ID de Zone d'Arrêt (ZdaId)
+  left_join(relation_acces, by = "AccId") %>%
+  # On ajoute le nom de la station et les infos temporelles
+  left_join(zone_arret, by = "ZdAId") %>%
+  # On nettoie pour ne garder que l'essentiel
+  select(AccId, ZdAId, ZdAName, ZdACreated, ZdAType, geometry)
 
-ggplot() +
-  geom_sf(data = sf_21) +
-  geom_sf(data = ratp_paris_annuel, color = "red", size = 0.5) +
-  labs(title = "Carte des arrêts RATP (bus - tram)") + 
-  theme_minimal()
 
-ratp_paris_annuel <- filter(!)
+access_noms$annee <- year(ymd_hms(access_noms$ZdACreated))
 ```
 
-|           |          |           |                                              |                                   |
-|-----------|----------|-----------|----------------------------------------------|-----------------------------------|
-| **Année** | **Mode** | **Ligne** | **Station**                                  | **Type d'événement**              |
-| **2015**  | RER      | **E**     | Rosa Parks                                   | **Création** (Nouvelle gare)      |
-| **2017**  | Tram     | **T11**   | Épinay - Le Bourget (Toute la ligne)         | **Création** (Nouvelle ligne)     |
-| **2018**  | Tram     | **T3b**   | Porte d'Asnières - Marguerite Long           | **Prolongement**                  |
-| **2018**  | Tram     | **T3b**   | Square Sainte-Odile                          | **Prolongement**                  |
-| **2018**  | Tram     | **T3b**   | Porte de Courcelles                          | **Prolongement**                  |
-| **2020**  | Métro    | **14**    | Pont Cardinet                                | **Prolongement Nord**             |
-| **2020**  | Métro    | **14**    | Porte de Clichy                              | **Prolongement Nord**             |
-| **2020**  | Métro    | **14**    | Saint-Ouen                                   | **Prolongement Nord**             |
-| **2020**  | Métro    | **14**    | Mairie de Saint-Ouen                         | **Prolongement Nord**             |
-| **2021**  | Tram     | **T9**    | Porte de Choisy (et 18 autres stations)      | **Création** (Nouvelle ligne)     |
-| **2022**  | Métro    | **4**     | Barbara                                      | **Prolongement Sud**              |
-| **2022**  | Métro    | **4**     | Bagneux - Lucie Aubrac                       | **Prolongement Sud**              |
-| **2022**  | Métro    | **12**    | Aimé Césaire                                 | **Prolongement Nord**             |
-| **2022**  | Métro    | **12**    | Mairie d'Aubervilliers                       | **Prolongement Nord**             |
-| **2023**  | Tram     | **T12**   | Massy - Évry (Toute la ligne)                | **Création** (Nouvelle ligne)     |
-| **2024**  | Métro    | **11**    | Serge Gainsbourg                             | **Prolongement Est**              |
-| **2024**  | Métro    | **11**    | Place Carnot                                 | **Prolongement Est**              |
-| **2024**  | Métro    | **11**    | Montreuil - Hôpital                          | **Prolongement Est**              |
-| **2024**  | Métro    | **11**    | La Dhuys                                     | **Prolongement Est**              |
-| **2024**  | Métro    | **11**    | Coteaux Beauclair                            | **Prolongement Est**              |
-| **2024**  | Métro    | **11**    | Rosny-Bois-Perrier                           | **Prolongement Est**              |
-| **2024**  | Métro    | **14**    | Saint-Denis Pleyel                           | **Prolongement Nord**             |
-| **2024**  | Métro    | **14**    | Maison Blanche                               | **Prolongement Sud**              |
-| **2024**  | Métro    | **14**    | Hôpital Bicêtre                              | **Prolongement Sud**              |
-| **2024**  | Métro    | **14**    | L'Haÿ-les-Roses                              | **Prolongement Sud**              |
-| **2024**  | Métro    | **14**    | Chevilly-Larue                               | **Prolongement Sud**              |
-| **2024**  | Métro    | **14**    | Thiais - Orly                                | **Prolongement Sud**              |
-| **2024**  | Métro    | **14**    | Aéroport d'Orly                              | **Prolongement Sud**              |
-| **2024**  | RER      | **E**     | Neuilly - Porte Maillot                      | **Prolongement Ouest**            |
-| **2024**  | RER      | **E**     | La Défense - Grande Arche                    | **Prolongement Ouest**            |
-| **2024**  | RER      | **E**     | Nanterre - La Folie                          | **Prolongement Ouest**            |
-| **2024**  | Tram     | **T3b**   | Square de la Chapelle (et 6 autres stations) | **Prolongement Ouest**            |
-| **2025**  | Métro    | **14**    | Villejuif - Gustave Roussy                   | **Création** (Ouverture différée) |
-| **2025**  | Métro    | **15**    | Pont de Sèvres (et tronçon Sud)              | **Création** (Lancement GPE)      |
+Lie les accès de métro au nom de la station
 
-=\> Il faudrait au final un df qui par année liste les arrêts/accès
+```{r arrets lignes}
+nmb_ligne_arret <- arrets_ligne %>% mutate(
+  mode = case_when(
+    mode %in% c("Metro", "RapidTransit", "regionalRail", "LocalTrain", "Funicular") ~ "Metro", 
+    mode == "Bus" ~ "bus",
+    mode == "Tramway" ~ "tram"
+  ) 
+) %>% mutate(stop_name = case_when(
+  stop_name == "Funiculaire Gare basse" ~ "Funiculaire de Montmartre - Gare basse",
+  stop_name == "Funiculaire Gare haute" ~  "Funiculaire de Montmartre - Gare haute",
+                       TRUE ~ stop_name
+)) %>% 
+  group_by(stop_name, mode) %>%
+  summarise(nb_lignes = n_distinct(shortName), .groups = "drop") 
+
+```
+
+```{r creation base acces metro avec nom aret et nmb lignes}
+access_noms_nmbligne <- access_noms %>% left_join(nmb_ligne_arret %>% filter(mode == "Metro" ), join_by("ZdAName"=="stop_name")) %>% select(!mode)
+```
+
+Dans la base "access_noms_nmbligne" on a une ligne par accès de metro/rer (indistinct) ainsi que leurs localisation géographique, le nom de l'arrêt de métro associé et le nombre de lignes de métro/rer qui passent par cette station !
+
+Pour les bus / tram, on laisse directement le nmb d'arrêts de bus plutôt que de compter le nmb de lignes par arrêt pcq il y a déjà bcp d'arrêts de bus par "zone" donc on risque de survaloriser des endroits en comptant chaque arrrêt de bus comme valant autant de fois qu'il y a de lignes
+
+ex : à Porte d'orléans il y a 17 lignes de bus et plus de vingts arrêts donc si on donne à chaque arrêt le poids des 17 lignes, on va surestimer la desserte en transport du lieu.
+
+```{r creation base arret tram bus avec nom arret et nmb ligne}
+#arrets_noms_nmbligne <- arrets_paris %>% left_join(nmb_ligne_arret %>% filter(mode %in% c("bus", "tram") ), by = c("ArRName" = "stop_name", "ArRType" = "mode"))
+
+#arrets_noms_nmbligne$annee <- year(ymd_hms(arrets_noms_nmbligne$ArRCreated))
+
+#arrets_noms_nmbligne <- arrets_noms_nmbligne %>% select(ArRId, ArRName, ArRCreated, ArRType, annee, ZdAId, nb_lignes, geometry)
+```
+
+```{r base arret bus tram}
+arrets_noms <- arrets_paris %>% mutate(annee = year(ymd_hms(arrets_paris$ArRCreated)))
+
+arrets_noms <- arrets_noms %>% select(ArRId, ArRName, ArRCreated, ArRType, annee, ZdAId, geometry) %>% mutate(ZdAId = as.integer(ZdAId))
+```
+
+```{r regrouper arrets tram/bus/metro et rer}
+
+ratp_paris <- bind_rows(access_noms_nmbligne %>% rename(Id = "AccId", "Created" = "ZdACreated",  "Name" = "ZdAName", "Type" = "ZdAType"), arrets_noms  %>% rename(Id = "ArRId", "Created" = "ArRCreated", "Name" = "ArRName", "Type" = "ArRType"))
+ratp_paris <- ratp_paris %>% mutate(Type = case_when(
+  Type %in% c("metroStation", "railStation") ~ "metro",
+  TRUE ~ Type
+))
+
+```
+
+La base ratp_paris comprend tous les **arrêts** de tram et de bus et tous les **accès** de métro et rer (donc pour un seul arrêt de métro, il y a plusieurs lignes car plusieurs bouches de métro !). Il y a "l'année de création" qui est l'année de création *dans la base* mais je ne suis vrmt pas certaine de la fiabilité donc à mon avis il ne vaut mieux pas utiliser...
+
+Le nombre de lignes correspond puor les métros / rer aux nombres de lignes qui passent par l'arrêt associé à [l'accès]{.underline}
+
+Dans type j'ai regroupé metro et rer car nous ne les différencerons pas dans l'analyse plus tard (lorsqu'on donnera des poids à chaque type de transport)
+
+```{r map}
+
+ggplot() +
+  geom_sf(data = sf_21)   +
+  geom_sf(data = ratp_paris |> filter(Type == "bus"), 
+          color = "#FFAA99", size = 0.5) +
+  geom_sf(data = ratp_paris |> filter(Type == "tram"), 
+          color = "#E8614A", size = 1) +
+  geom_sf(data = ratp_paris |> filter(Type == "metro"), 
+          color = "red", size = 1.5) +
+  labs(title = "Carte des accès de métro/RER et arrêts de tram et bus") + 
+  theme_minimal()
+
+
+```
+
+```{r export de la base}
+write.csv(ratp_paris, "base_ratp.csv", row.names = FALSE)
+```
