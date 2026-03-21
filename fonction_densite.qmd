@@ -8,42 +8,165 @@ editor: visual
 
 Dans ce code, on cherche à créer une fonction qui a un polygone (périmètre géographique) associe une densité d'un certain type de points
 
-```{r fonction comptage pts par polygone}
+```{r}
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(readr)
 
-compter_points_par_polygone <- function(polygones, ...) {
+base_source <- read_csv("dtb_poly_annee_df.csv")
+base_source_sf <- readRDS("dtb_poly_annee_df.rds")
+
+ratp_paris <- readRDS("base_ratp.rds") 
+ratp_paris <- st_transform(ratp_paris, 4326)
+```
+
+```{r fonction comptage pts par polygone}
+compter_points_par_polygone <- function(polygones, col_geo = NULL, ...) {
+  
+  if (!is.null(col_geo)) {
+    # 1. On récupère la géométrie brute, peu importe son état actuel
+    geo_temp <- st_geometry(polygones[[col_geo]])
+    
+    # 2. On force le passage en MULTIPOLYGON (c'est ça qui règle le bug des types mixtes)
+    geo_temp <- st_cast(geo_temp, "MULTIPOLYGON")
+    
+    # 3. On répare les erreurs de tracé ("mord la queue")
+    geo_temp <- st_make_valid(geo_temp)
+    
+    # 4. On réinjecte cette géométrie propre dans le tableau
+    polygones[[col_geo]] <- geo_temp
+    
+    # 5. On définit la colonne comme la géométrie active pour le calcul
+    polygones <- st_as_sf(polygones, sf_column_name = col_geo)
+  }
   
   points_list <- list(...)
-  
   result <- polygones
   
   for (nom in names(points_list)) {
     points_sf <- points_list[[nom]]
     
-    # Harmoniser les CRS
+    # Harmonisation CRS
     points_sf <- st_transform(points_sf, st_crs(polygones))
     
-    # Compter les points dans chaque polygone
-    counts <- lengths(st_intersects(polygones, points_sf))
-    
-    result[[nom]] <- counts
+    # CALCUL : On utilise st_geometry pour être sûr de pointer sur col_geo
+    result[[nom]] <- lengths(st_intersects(st_geometry(polygones), points_sf))
   }
   
-  return(result)
+  return(as.data.frame(result))
 }
 ```
 
-Pour un df avec des polygones et un df avec des points (base des arrêts de transports par ex ou bien des commerces / commerces de même type), la fonction compte le nmb de points dans le polygone. La sortie de la fonction est un df avec une ligne par polygone et une colonne par type de points que l'on cherche à compter
+```{r comptage temporel  }
+compter_points_temporels_v2 <- function(polygones, col_geo = "p3", col_annee = "annee", ...) {
+  
+  # 1. Nettoyage et préparation de la géométrie (comme avant)
+  if (!is.null(col_geo)) {
+    polygones[[col_geo]] <- st_make_valid(st_cast(st_geometry(polygones[[col_geo]]), "MULTIPOLYGON"))
+    polygones <- st_as_sf(polygones, sf_column_name = col_geo)
+  }
+  
+  points_list <- list(...)
+  result <- polygones
+  
+  for (nom in names(points_list)) {
+    points_sf <- st_transform(points_list[[nom]], st_crs(polygones))
+    
+    # ÉTAPE SPATIALE UNIQUE : Qui touche quoi (sans regarder la date)
+    message(paste("Calcul spatial pour :", nom))
+    inter_globale <- st_intersects(st_geometry(polygones), points_sf)
+    
+    # ÉTAPE CALCUL DATE : On filtre les indices par l'année
+    # On compare l'année du polygone (ligne i) avec les années des points touchés
+    result[[nom]] <- sapply(1:nrow(polygones), function(i) {
+      annee_limite <- polygones[[col_annee]][i]
+      indices_points_touches <- inter_globale[[i]]
+      
+      if(length(indices_points_touches) > 0) {
+        # On compte combien de points touchés ont une année <= année du commerce
+        sum(points_sf[[col_annee]][indices_points_touches] <= annee_limite, na.rm = TRUE)
+      } else {
+        0
+      }
+    })
+  }
+  
+  return(as.data.frame(result))
+}
 
-Ici on fait le test avec le df polygone des IRIS mais à termes ce sera avec les polygones 3min / 5min...
 
-```{r test fonction}
+```
+
+## Comptage des points ratp 
+
+```{r TEST fonction comptage annee RATP}
 
 
-resultat <- compter_points_par_polygone(
-  polygones   = sf_21,
-  metro       = ratp_paris |> filter(Type == "metro"),
-  bus         = ratp_paris |> filter(Type == "bus")
+base_source_3m <- compter_points_temporels_v2(
+  polygones = base_source,
+  col_geo = "p3",
+  col_annee = "annee", # Nom commun aux deux bases
+  metro_3m = ratp_paris %>% filter(Type == "metro"),
+  tram_3m = ratp_paris %>% filter(Type == "tram"),
+  bus_3m   = ratp_paris %>% filter(Type == "bus")
 )
 
+base_source_5m <- compter_points_temporels_v2(
+   polygones = base_source,
+  col_geo = "p5",
+  col_annee = "annee",
+  metro_5m = ratp_paris %>% filter(Type == "metro"), 
+  tram_5m = ratp_paris %>% filter(Type == "tram"),
+  bus_5m   = ratp_paris %>% filter(Type == "bus")
+)
+```
+
+```{r mettre 3m et 5m ensemble ratp}
+
+data_maelie_ratp <- data_3m %>% left_join(data_5m %>% select(siret, metro_5m, tram_5m, bus_5m), by = "siret") %>% mutate(siret = as.numeric(siret))
+
+base_finale_M <- base_source_M %>% left_join(data_maelie_ratp, by = "siret")
+
+```
+
+## Comptage commerces
+
+```{r comptage commerces }
+# 1. On crée une base de points qui ne contient QUE les commerces au moment où ils sont ouverts
+commerces_actifs_points <- base_source %>%
+  filter(etat == "A") %>%
+  select(siret, annee, geometry) %>% 
+  st_as_sf()
+
+# 2. On utilise ta fonction "Flash" habituelle (celle avec sapply)
+commerce_compte_3m <- compter_points_temporels_v2(
+  polygones = base_source, 
+  col_geo = "p3", 
+  col_annee = "annee",
+  nb_voisins = commerces_actifs_points # On injecte uniquement les 'A'
+)
+
+commerce_compte_3m <- commerce_compte_3m %>%
+  mutate(nb_voisins = ifelse(etat == "A", pmax(0, nb_voisins - 1), nb_voisins))
+
+commerce_compte_5m <- compter_points_temporels_v2(
+  polygones = base_source, 
+  col_geo = "p5", 
+  col_annee = "annee",
+  nb_voisins = commerces_actifs_points # On injecte uniquement les 'A'
+)
+
+commerce_compte_5m <- commerce_compte_5m %>%
+  mutate(nb_voisins = ifelse(etat == "A", pmax(0, nb_voisins - 1), nb_voisins))
+
+```
+
+```{r base comptage ratp final}
+
+#base_comptage_ratp_finale <- bind_rows(base_finale_M, base_finale_lucien, base_finale_lilou)
+
+#saveRDS(base_comptage_ratp_finale, "base_comptage_ratp_finale.rds")
 
 ```

@@ -1,0 +1,84 @@
+---
+title: "reconstruction base pour comptage"
+format: html
+editor: visual
+---
+
+Le but de ce code est, à partir des bases avec le polygone (en 2025) de retomber sur une base avec *tous les sirets* et d'associer le polygone 2025 à toutes les années pour le même SIRET
+
+De plus, on attribue à chaque commerce son IRIS de référence
+
+```{r packages}
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(readr)
+
+```
+
+Ici les bases sont celles avec les polygones pour chaque commerce (en 2025)
+
+```{r bases}
+
+
+data_maelie <- readRDS("data_sauvegarde.rds")
+data_lucien
+data_lilou 
+final_dtb_nettoye <- read_csv("final_dtb_nettoye.csv")
+
+iris_rev_contour <- readRDS("iris_rev_contour.rds")
+```
+
+On associe à chaque commece son IRIS
+
+/!\\ une centaine de commerces n'ont pas de point géographique alors qu'ils ont une adresse ! -\> on doit les supprimer
+
+```{r associer iris a commerce}
+
+commerces_propre <- final_dtb_nettoye %>%
+  mutate(
+    # On retire tout ce qui n'est pas chiffre, point ou espace
+    coords_clean = str_replace_all(geometry, "POINT|\\(|\\)", ""),
+    coords_clean = str_trim(coords_clean)
+  ) %>%
+  # On sépare en deux colonnes : lon et lat
+  separate(coords_clean, into = c("lon", "lat"), sep = "\\s+", convert = TRUE) %>%
+  filter(!is.na(lat))
+
+commerces_sf <- st_as_sf(commerces_propre, coords = c("lon", "lat"), crs = 4326)
+iris_rev_contour_sf <- st_as_sf(iris_rev_contour, sf_column_name = "geometry", crs = 2154)
+commerces_sf <- st_transform(commerces_sf, st_crs(iris_rev_contour_sf))
+commerces_enrichis <- st_join(commerces_sf, iris_rev_contour_sf, join = st_intersects)
+
+commerces_enrichis <-st_transform(commerces_enrichis, 4326)
+
+
+# commerces_enrichis = ligne siret_annee avec le pt geo, l'iris et qqs colonnes d'infos sur l'iris :) 
+```
+
+On remet les trois bases ensembles
+
+```{r transformer bases lilou et lucien}
+# Potentiellement supprimer des colonnes pour qu'il y ait que siret / p3 / p5 
+```
+
+```{r}
+
+base_2025_polygones <- bind_rows(data_maelie, data_lucien, data_lilou) %>% arrange(siret)
+
+
+```
+
+```{r}
+
+dtb_poly_annee_df <- commerces_enrichis %>% left_join(base_2025_polygones, by = "siret")
+
+dtb_poly_annee_geo <- st_as_sf(dtb_poly_annee_df, sf_column_name = "p5", crs = 4326) # c'est le polygone 5 qui est la géométrie active par défaut mais ca ne changera rien 
+```
+
+```{r}
+
+saveRDS(dtb_poly_annee_geo, "dtb_poly_annee_geo.rds")
+write_csv(dtb_poly_annee_df, "dtb_poly_annee_df.csv")
+```
