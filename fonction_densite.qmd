@@ -14,9 +14,10 @@ library(dplyr)
 library(ggplot2)
 library(tidyr)
 library(readr)
+library(progressr)
 
 base_source <- read_csv("dtb_poly_annee_df.csv")
-base_source_sf <- readRDS("dtb_poly_annee_df.rds")
+base_source_sf <- readRDS("dtb_poly_annee_geo.rds")
 
 ratp_paris <- readRDS("base_ratp.rds") 
 ratp_paris <- st_transform(ratp_paris, 4326)
@@ -61,8 +62,8 @@ compter_points_par_polygone <- function(polygones, col_geo = NULL, ...) {
 
 ```{r comptage temporel  }
 compter_points_temporels_v2 <- function(polygones, col_geo = "p3", col_annee = "annee", ...) {
-  
-  # 1. Nettoyage et préparation de la géométrie (comme avant)
+
+  # 1. Nettoyage et préparation de la géométrie
   if (!is.null(col_geo)) {
     polygones[[col_geo]] <- st_make_valid(st_cast(st_geometry(polygones[[col_geo]]), "MULTIPOLYGON"))
     polygones <- st_as_sf(polygones, sf_column_name = col_geo)
@@ -71,22 +72,30 @@ compter_points_temporels_v2 <- function(polygones, col_geo = "p3", col_annee = "
   points_list <- list(...)
   result <- polygones
   
+  # On définit le nombre total d'étapes pour la barre de progression
+  # (Nombre de types de points * Nombre de lignes de polygones)
+  p <- progressor(steps = length(points_list) * nrow(polygones))
+  
   for (nom in names(points_list)) {
     points_sf <- st_transform(points_list[[nom]], st_crs(polygones))
     
-    # ÉTAPE SPATIALE UNIQUE : Qui touche quoi (sans regarder la date)
+    # ÉTAPE SPATIALE UNIQUE
     message(paste("Calcul spatial pour :", nom))
     inter_globale <- st_intersects(st_geometry(polygones), points_sf)
     
-    # ÉTAPE CALCUL DATE : On filtre les indices par l'année
-    # On compare l'année du polygone (ligne i) avec les années des points touchés
+    # ÉTAPE CALCUL DATE
     result[[nom]] <- sapply(1:nrow(polygones), function(i) {
+      # On signale la progression à chaque polygone traité
+      p(message = sprintf("Traitement %s (ligne %d)", nom, i))
+      
       annee_limite <- polygones[[col_annee]][i]
       indices_points_touches <- inter_globale[[i]]
       
+      annee_min_points <- min(points_sf[[col_annee]], na.rm = TRUE)
+      annee_effective <- max(annee_limite, annee_min_points)
+      
       if(length(indices_points_touches) > 0) {
-        # On compte combien de points touchés ont une année <= année du commerce
-        sum(points_sf[[col_annee]][indices_points_touches] <= annee_limite, na.rm = TRUE)
+        sum(points_sf[[col_annee]][indices_points_touches] <= annee_effective, na.rm = TRUE)
       } else {
         0
       }
@@ -99,23 +108,33 @@ compter_points_temporels_v2 <- function(polygones, col_geo = "p3", col_annee = "
 
 ```
 
-## Comptage des points ratp 
+## Comptage des points ratp
 
-```{r TEST fonction comptage annee RATP}
+```{r fonction comptage annee RATP}
 
+base_source_sf <- st_set_geometry(base_source_sf, "poly_3")
+attr(base_source_sf, "sf_column")
 
-base_source_3m <- compter_points_temporels_v2(
-  polygones = base_source,
-  col_geo = "p3",
-  col_annee = "annee", # Nom commun aux deux bases
-  metro_3m = ratp_paris %>% filter(Type == "metro"),
-  tram_3m = ratp_paris %>% filter(Type == "tram"),
-  bus_3m   = ratp_paris %>% filter(Type == "bus")
-)
+handlers(global = TRUE) 
+handlers("progress") 
+
+with_progress({
+  base_source_3m <- compter_points_temporels_v2(
+    polygones = base_source_sf,
+    col_geo = "poly_3",
+    col_annee = "annee",
+    metro_3m = ratp_paris %>% filter(Type == "metro"),
+    tram_3m = ratp_paris %>% filter(Type == "tram"),
+  bus_3m   = ratp_paris %>% filter(Type == "bus") 
+  )
+})
+
+base_source_sf <- st_set_geometry(base_source_sf, "poly_5")
+attr(base_source_sf, "sf_column")
 
 base_source_5m <- compter_points_temporels_v2(
    polygones = base_source,
-  col_geo = "p5",
+  col_geo = "poly_5",
   col_annee = "annee",
   metro_5m = ratp_paris %>% filter(Type == "metro"), 
   tram_5m = ratp_paris %>% filter(Type == "tram"),
@@ -123,27 +142,20 @@ base_source_5m <- compter_points_temporels_v2(
 )
 ```
 
-```{r mettre 3m et 5m ensemble ratp}
-
-data_maelie_ratp <- data_3m %>% left_join(data_5m %>% select(siret, metro_5m, tram_5m, bus_5m), by = "siret") %>% mutate(siret = as.numeric(siret))
-
-base_finale_M <- base_source_M %>% left_join(data_maelie_ratp, by = "siret")
-
-```
-
 ## Comptage commerces
 
 ```{r comptage commerces }
 # 1. On crée une base de points qui ne contient QUE les commerces au moment où ils sont ouverts
-commerces_actifs_points <- base_source %>%
+
+# Enlever base test qd on aura la base pleine
+commerces_actifs_points <- base_test_3m %>%
   filter(etat == "A") %>%
-  select(siret, annee, geometry) %>% 
+  select(siret, annee, poly_3) %>% 
   st_as_sf()
 
-# 2. On utilise ta fonction "Flash" habituelle (celle avec sapply)
 commerce_compte_3m <- compter_points_temporels_v2(
-  polygones = base_source, 
-  col_geo = "p3", 
+  polygones = base_test_3m, 
+  col_geo = "poly_3", 
   col_annee = "annee",
   nb_voisins = commerces_actifs_points # On injecte uniquement les 'A'
 )
