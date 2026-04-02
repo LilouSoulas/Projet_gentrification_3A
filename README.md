@@ -1,10 +1,11 @@
-Note à moi même (M) : 
+Pour lucien : 
 
-avec la base de lilou et lucien (siret - polygone) --> faire tourner le code reconstruction_base_pour_comptage.R
-Pour mettre les 3 bases ensemble, associer les polygones aux commerces_annee de la base finale_dtb 
-Ce même code permet aussi d'ajouter les infos IRIS de chaque commerce 
+Les bases "dtb_poly_annee.df" et "dtb_poly_annee.rds" sont les bases avec une ligne par commerce_annee et : 
+- leur localisation (pour le df, c'est juste les coordonnées écrites et pour le .rds c'est une géométrie)
+- Leur polygone 3 minute et polygone 5 minute
+- L'iris qui lui est associé / le type d'iris (gentrifié / pas etc.)
+- Et les indicatrices : parc dans les 3 minutes et parc dans les 5 minutes
 
-A la fin de ce code, t'as une base par siret_annee avec les infos d'IRIS et les polygones 3 / 5 par commerce (dupliqué sur les années)
-
-Ensuite faire tourner le code de focntion_densite qui fait d'abord le comptage des arrêts RATP _par année_ 
-Puis comptage des autres commerces aussi apr année (lorsqu'ils sont encore ouverts)
+Ensuite il faut faire tourner le code "fonction.densite" avec dedans la fonction de comptage, une qui compte tout et une qui compte par année. Dans les bouts de codes suivants c'est pour faire le comptage du nmb de métro/tram/bus à 3 minute, puis à 5 minute et enfin le nombre de commerces. 
+Je pense qu'il y a moyen d'optimiser la fonction, ou faire des tests sur des plus petits bouts pour voir le temps que ça prend en tout 
+Et il faudrait enregistrer à la fin du code pour avoir une base avec toutoutout enfin lol 
