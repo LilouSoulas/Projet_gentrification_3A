@@ -1,0 +1,123 @@
+---
+title: "density_v2"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+library(sf)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(readr)
+#install.packages("purrr")
+library(purrr)
+
+```
+
+You can add options to executable code like this
+
+```{r}
+
+
+base_source_sf <- readRDS("dtb_poly_annee_geo.rds")
+
+# 1. PRÉPARATION DU DOSSIER DE SAUVEGARDE --------------------------------------
+#dir.create("polygones/data/density/sauvegardes_annuelles", showWarnings = FALSE, 
+           recursive = TRUE)
+
+compter_points_production <- function(polygones, points_base, col_geo = "poly_5", prefixe = "p5") {
+  
+  # Harmonisation CRS unique pour éviter de le refaire 600k fois
+  message("Harmonisation du CRS...")
+  points_base <- st_transform(points_base, st_crs(polygones))
+  
+  annees_dispo <- sort(unique(polygones$annee))
+  
+  for (a in annees_dispo) {
+    nom_fichier <- paste0("polygones/data/density/sauvegardes_annuelles/calcul_", prefixe, "_", a, ".rds")
+    
+    # SÉCURITÉ : Si le fichier existe déjà, on passe à l'année suivante
+    if (file.exists(nom_fichier)) {
+      message(paste("Année", a, "déjà calculée, passage à la suivante..."))
+      next
+    }
+    
+    message(paste("--- Traitement de l'année :", a, "---"))
+    
+    # Filtrage temporel strict
+    poly_sub  <- polygones %>% filter(annee == a) %>% st_as_sf(sf_column_name = col_geo) %>% st_set_geometry(col_geo) %>% st_make_valid()
+    points_sub <- points_base %>% filter(annee == a, etat == "A")
+    
+    if(nrow(poly_sub) == 0) next
+    
+    # Calcul spatial (Intersects est plus léger que Join pour de gros volumes)
+    # On récupère une liste d'indices de points pour chaque polygone
+    message("   Calcul des intersections...")
+    inter_list <- st_intersects(poly_sub, points_sub)
+    
+    # Comptage avec filtre APE
+    message("   Filtrage par code APE...")
+    nb_voisins <- sapply(1:nrow(poly_sub), function(i) {
+      indices <- inter_list[[i]]
+      if(length(indices) == 0) return(0)
+      
+      # On compte combien de points parmi les intersectés ont le même APE
+      sum(points_sub$ape[indices] == poly_sub$ape[i], na.rm = TRUE)
+    })
+    
+    # Ajout du résultat et retrait de la géométrie pour alléger le fichier
+    poly_sub$nb_voisins_ape <- nb_voisins
+    
+    # Sauvegarde immédiate du bloc
+    saveRDS(st_drop_geometry(poly_sub), nom_fichier)
+    message(paste("   Sauvegarde réussie :", nom_fichier))
+    
+    # Nettoyage de la mémoire (Garbage Collector)
+    rm(poly_sub, points_sub, inter_list, nb_voisins)
+    gc()
+  }
+  
+  message("Calculs terminés pour toutes les années.")
+}
+
+
+
+
+```
+
+```{r}
+# 2. LANCEMENT DU CALCUL -------------------------------------------------------
+
+# Calcul pour 3 minutes
+compter_points_production(base_source_sf, base_source_sf, col_geo = "poly_3", prefixe = "p3")
+
+
+# 3. RÉASSEMBLAGE FINAL --------------------------------------------------------
+# Une fois que tout est fini, on fusionne les petits fichiers
+fichiers_p3 <- list.files("polygones/data/density/sauvegardes_annuelles", pattern = "calcul_p3", full.names = TRUE)
+df_final_p3 <- map_df(fichiers_p3, readRDS)
+saveRDS(df_final_p3, "polygones/data/density/df_cmt_p3.rds")
+
+
+# Calcul & rassemblage pour 5 minutes
+base_source_sf <- st_set_geometry(base_source_sf, "poly_5")
+compter_points_production(base_source_sf, base_source_sf, col_geo = "poly_5", prefixe = "p5")
+
+fichiers_p5 <- list.files("sauvegardes_annuelles", pattern = "calcul_p5", full.names = TRUE)
+df_final_p5 <- map_df(fichiers_p5, readRDS)
+
+
+```
+
+```{r}
+df_final_p3 <- df_final_p3 %>% left_join(base_source_sf %>% select(siret, poly_3), by = ("siret", "annee")) 
+```
