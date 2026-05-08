@@ -1,0 +1,118 @@
+---
+title: "density_ratp"
+format: html
+editor: visual
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+library(readr)
+library(sf)
+```
+
+```{r}
+base_ratp <- readRDS("~/work/Projet_gentrification_3A/base_ratp.rds")
+base_ratp <- st_as_sf(base_ratp, sf_column_name = "geometry", crs = 2154)
+base_ratp <- st_transform(base_ratp, crs = 4326)
+
+
+```
+
+You can add options to executable code like this
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+
+# 2. FONCTION COMPTAGE ARRÊTS RATP DANS POLYGONES COMMERCES --------------------
+dir.create("data/sauvegardes_annuelles/ratp", showWarnings = FALSE,
+           recursive = TRUE)
+
+compter_arrets_ratp <- function(polygones, ratp_base, col_geo = "poly_5", prefixe = "p5") {
+  
+  # Harmonisation CRS unique
+  message("Harmonisation du CRS...")
+  ratp_base <- st_transform(ratp_base, st_crs(polygones))
+  
+  annees_dispo <- sort(unique(polygones$annee))
+  
+  for (a in annees_dispo) {
+    nom_fichier <- paste0("data/sauvegardes_annuelles/ratp/calcul_ratp_", prefixe, "_", a, ".rds")
+    
+    # SÉCURITÉ : Si le fichier existe déjà, on passe
+    if (file.exists(nom_fichier)) {
+      message(paste("Année", a, "déjà calculée, passage à la suivante..."))
+      next
+    }
+    
+    message(paste("--- Traitement de l'année :", a, "---"))
+    
+    # Polygones du commerce pour l'année a
+    poly_sub <- polygones %>%
+      filter(annee == a) %>%
+      st_as_sf(sf_column_name = col_geo) %>%
+      st_set_geometry(col_geo) %>%
+      st_make_valid()
+    
+    # Arrêts RATP ouverts à l'année a :
+    # - année de création <= a (arrêt déjà ouvert)
+    # - arrêts 2014 = ouverts depuis toujours, donc toujours inclus
+      ratp_sub <- ratp_base %>%
+         filter(annee <= a | annee == 2014)
+    
+    if (nrow(poly_sub) == 0) next
+    if (nrow(ratp_sub) == 0) {
+      message("   Aucun arrêt RATP disponible pour cette année, nb = 0 partout.")
+      poly_sub[[paste0("nb_arrets_ratp_", prefixe)]] <- 0L
+      saveRDS(st_drop_geometry(poly_sub), nom_fichier)
+      next
+    }
+    
+    # Calcul des intersections
+    message("   Calcul des intersections...")
+    inter_list <- st_intersects(poly_sub, ratp_sub)
+    
+    poly_sub[[paste0("nb_arrets_ratp_", prefixe)]] <- sapply(inter_list, length)
+    
+    # Sauvegarde sans géométrie
+    saveRDS(st_drop_geometry(poly_sub), nom_fichier)
+    message(paste("   Sauvegarde réussie :", nom_fichier))
+    
+    rm(poly_sub, ratp_sub, inter_list)
+    gc()
+  }
+  
+  message("Calculs terminés pour toutes les années.")
+}
+
+
+```
+
+```{r}
+
+# Calcul pour 3 minutes
+compter_arrets_ratp(base_source_sf, base_ratp, col_geo = "poly_3", prefixe = "p3")
+
+
+# 3. RÉASSEMBLAGE FINAL --------------------------------------------------------
+# Une fois que tout est fini, on fusionne les petits fichiers
+fichiers_p3 <- list.files("data/sauvegardes_annuelles/ratp", pattern = "calcul_ratp_p3", full.names = TRUE)
+df_ratp_p3 <- map_df(fichiers_p3, readRDS)
+saveRDS(df_ratp_p3, "df_ratp_p3.rds")
+
+
+# Calcul & rassemblage pour 5 minutes
+base_source_sf <- st_set_geometry(base_source_sf, "poly_5")
+compter_arrets_ratp(base_source_sf, base_ratp, col_geo = "poly_5", prefixe = "p5")
+
+fichiers_p5 <- list.files("data/sauvegardes_annuelles/ratp", pattern = "calcul_ratp_p5", full.names = TRUE)
+df_ratp_p5 <- map_df(fichiers_p5, readRDS)
+saveRDS(df_ratp_p5, "df_ratp_p5.rds")
+```
