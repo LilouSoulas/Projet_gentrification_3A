@@ -1,5 +1,0 @@
----
-title: "denisty_c"
-format: html
----
-
