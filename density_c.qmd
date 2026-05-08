@@ -89,7 +89,7 @@ saveRDS(df_c_p3, "df_c_p3.rds")
 base_source_sf <- st_set_geometry(base_source_sf, "poly_5")
 compter_points_production(base_source_sf, base_source_sf, col_geo = "poly_5", prefixe = "p5")
 
-fichiers_p5 <- list.files("data/sauvegardes_annuelles/tout_commerce", pattern = "calcul_p5", full.names = TRUE)
+fichiers_p5 <- list.files("data/sauvegardes_annuelles/tout_commerce", pattern = "calcul_tout_commerce_p5_", full.names = TRUE)
 df_final_p5 <- map_df(fichiers_p5, readRDS)
 saveRDS(df_final_p5, "df_c_p5.rds")
 ```

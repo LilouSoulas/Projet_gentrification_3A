@@ -1,0 +1,85 @@
+---
+
+---
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(survival)
+library(purrr)
+
+```
+
+```{r}
+base_source_sf <- readRDS("~/work/Projet_gentrification_3A/dtb_poly_annee_geo.rds")
+df_c_p3 <- readRDS("~/work/Projet_gentrification_3A/df_c_p3.rds")
+df_c_p5 <- readRDS("~/work/Projet_gentrification_3A/df_c_p5.rds")
+df_cmt_p3 <- readRDS("~/work/Projet_gentrification_3A/df_cmt_p3.rds")
+df_cmt_p5 <- readRDS("~/work/Projet_gentrification_3A/df_cmt_p5.rds")
+df_ratp_p3 <- readRDS("~/work/Projet_gentrification_3A/df_ratp_p3.rds")
+df_ratp_p5 <- readRDS("~/work/Projet_gentrification_3A/df_ratp_p5.rds")
+
+
+```
+
+```{r}
+
+configs <- list(
+  # Pour p3
+  list(df = df_c_p3, col = "nb_voisins_tous", new_name = "nb_voisins_tous_p3"),
+  list(df = df_cmt_p3, col = "nb_voisins_ape", new_name = "nb_voisins_ape_p3"),
+  list(df = df_ratp_p3, col = "nb_arrets_ratp_p3", new_name = "nb_arrets_ratp_p3"),
+  
+  # Pour p5
+  list(df = df_c_p5, col = "nb_voisins_tous", new_name = "nb_voisins_tous_p5"),
+  list(df = df_cmt_p5, col = "nb_voisins_ape", new_name = "nb_voisins_ape_p5"),
+  list(df = df_ratp_p5, col = "nb_arrets_ratp_p5", new_name = "nb_arrets_ratp_p5")
+)
+
+# 2. On initialise notre dataframe de travail
+df_final <- base_source_sf
+
+# 3. On boucle sur la liste de configurations
+for (conf in configs) {
+  
+  df_final <- df_final %>%
+    left_join(
+      conf$df %>% select(siret, annee, !!sym(conf$col)), 
+      by = c("siret", "annee")
+    ) %>%
+    rename(!!sym(conf$new_name) := !!sym(conf$col))
+  
+}
+
+
+```
+
+```{r}
+
+df_cox <- df_final %>%
+  # Extraire l'année de création depuis la date
+  mutate(
+    annee_creation = year(ymd(gsub("/", "-", creation_date))),  
+    # Début de l'intervalle = l'année en cours
+    t_debut = annee - annee_creation,
+    # Fin de l'intervalle = année suivante
+    t_fin   = t_debut + 1,
+    # Événement : 1 uniquement sur la ligne où le commerce ferme
+    # La logique : etat == F ET c'est la première fois qu'il est F
+    evenement = as.integer(etat == "F")
+  ) %>%
+  # Supprimer les lignes APRÈS la fermeture (une fois F, le commerce ne réapparaît pas)
+  group_by(siret) %>%
+  arrange(annee) %>%
+  filter(cumsum(evenement) <= 1) %>%  # on garde jusqu'à la ligne de fermeture incluse
+  ungroup() %>%
+  # Supprimer les durées nulles ou négatives (commerces créés en cours d'année)
+  filter(t_debut >= 0, t_fin > t_debut)
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
+
+```{r}
+table(df_cox$etat)
+
+```
