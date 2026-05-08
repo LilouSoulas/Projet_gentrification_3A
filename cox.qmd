@@ -1,12 +1,17 @@
----
+------------------------------------------------------------------------
 
----
+------------------------------------------------------------------------
 
 ```{r}
 library(dplyr)
 library(lubridate)
 library(survival)
 library(purrr)
+library(survival)
+library(ggsurvfit) 
+library(gtsummary)
+library(scales)
+library(ggplot2)
 
 ```
 
@@ -22,7 +27,7 @@ df_ratp_p5 <- readRDS("~/work/Projet_gentrification_3A/df_ratp_p5.rds")
 
 ```
 
-```{r}
+```{r preparation df total }
 
 configs <- list(
   # Pour p3
@@ -54,7 +59,107 @@ for (conf in configs) {
 
 ```
 
+## Statistiques descriptives
+
+### Caractéristiques de l'échantillon à trois moments 2010, 2018, 2025
+
+```{r table1}
+generate_french_table <- function(df, target_year) {
+  
+  data_year <- df %>%
+    st_drop_geometry() %>%
+    filter(annee == target_year) %>% filter(etat == "A") %>% 
+    mutate(
+      employeur = case_when(
+        employeur %in% c("1", "O", "Oui") ~ "Avec employés",
+        employeur %in% c("0", "N", "Non") ~ "Sans employés",
+        TRUE ~ as.character(employeur)
+      ),
+      employeur = factor(employeur, levels = c("Avec employés", "Sans employés")),
+      gentr_type = factor(gentr_type, levels = c("populaire", "gentrifié", "aisé"))
+    ) %>%
+    select(
+      `Type de quartier` = gentr_type,
+      `Présence d'employés` = employeur,
+      `Commerces (3 min à pied)` = nb_voisins_tous_p3,
+      `Commerces de même type (3 min)` = nb_voisins_ape_p3,
+      `Arrêts de transport (3 min)` = nb_arrets_ratp_p3,
+      `Présence d'un parc (3 min)` = parc_3
+    )
+
+  data_year %>%
+    tbl_summary(
+      by = `Type de quartier`,
+      statistic = list(
+        # On arrondit les médianes à 2 décimales pour la précision
+        all_continuous() ~ "{median} ({p25}, {p75})",
+        # On affiche l'effectif sans décimales (car un commerce est entier)
+        all_categorical() ~ "{n} ({p}%)"
+      ),
+      # On force l'affichage des nombres entiers pour les effectifs
+      digits = list(
+        all_categorical() ~ 0,      # Pas de décimales pour les n et %
+        all_continuous() ~ 0          # 2 décimales pour les médianes
+      )
+    ) %>%
+    add_p() %>%
+    add_overall() %>%
+    bold_labels() %>%
+    modify_caption(paste("Tableau : État des commerces en", target_year))
+}
+
+tab_2010 <- generate_french_table(df_final, 2010)
+tab_2018 <- generate_french_table(df_final, 2018)
+tab_2025 <- generate_french_table(df_final, 2025)
+
+# Affichage
+tab_2010
+tab_2018
+tab_2025
+```
+
 ```{r}
+stats_globales <- df_cox %>%
+      st_drop_geometry() %>%
+
+  # On groupe par commerce pour voir l'historique de chaque unité
+  group_by(siret) %>% 
+  summarise(
+    # On vérifie si le commerce a déjà connu au moins un événement "F"
+    a_ferme = any(etat == "F", na.rm = TRUE), 
+    .groups = 'drop'
+  ) %>%
+  # 2. On calcule les statistiques sur cette liste d'individus
+  summarise(
+    total_commerces = n(),
+    nombre_fermetures = sum(a_ferme),
+    proportion_fermetures = (nombre_fermetures / total_commerces) * 100
+  )
+
+# Affichage
+print(stats_globales)
+```
+
+```{r boxplots sur concurrence et accessibilite}
+# On utilise les données préparées
+ggplot(table1_data, aes(x = gentr_type, y = nb_voisins_tous_p3, fill = gentr_type)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 1) +
+  scale_fill_manual(values = c("populaire" = "#E74C3C", "gentrifié" = "#F39C12", "aisé" = "#2ECC71")) +
+  labs(
+    title = "Distribution de la concurrence par quartier",
+    subtitle = "Nombre de commerces de même type à proximité",
+    x = "Type de quartier",
+    y = "Nombre de voisins (médiane)",
+    fill = "Quartier"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none") 
+
+
+
+```
+
+```{r }
 
 df_cox <- df_final %>%
   # Extraire l'année de création depuis la date
@@ -75,11 +180,117 @@ df_cox <- df_final %>%
   ungroup() %>%
   # Supprimer les durées nulles ou négatives (commerces créés en cours d'année)
   filter(t_debut >= 0, t_fin > t_debut)
+
+df_cox <- df_cox %>% arrange(siret)
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+```{r survie commercial selon type de quartier desc}
+ 
+
+# Construire l'objet survie simple (pas time-varying ici, juste durée totale)
+# On prend une ligne par commerce : la dernière
+base_km <- df_cox %>% filter(gentr_type != "autre") %>%
+  group_by(siret) %>%
+  slice_max(annee) %>%  # dernière observation
+  ungroup() %>%
+    filter(t_fin <= 20) 
+
+
+km_fit <- survfit(
+  Surv(t_fin, evenement) ~ gentr_type,  # une courbe par type de quartier
+  data = base_km
+)
+
+# Visualisation
+mes_couleurs <- c("populaire" = "#E74C3C", "gentrifié" = "#F39C12", "aisé" = "#2ECC71")
+mes_labels   <- c("populaire" = "Quartier pauvre", 
+                 "gentrifié" = "Quartier en gentrification", 
+                 "aisé" = "Quartier aisé")
+
+
+survfit2(Surv(t_fin, evenement) ~ gentr_type, data = base_km) %>%
+  ggsurvfit() +
+  add_confidence_interval() +
+  add_risktable() +  # Application des couleurs et labels aux LIGNES
+  scale_color_manual(
+    values = mes_couleurs,
+    labels = mes_labels
+  ) +
+  
+  # Application des couleurs et labels au REMPLISSAGE (pour fusionner)
+  scale_fill_manual(
+    values = mes_couleurs,
+    labels = mes_labels
+  ) +
+  labs(
+    title = "Survie des commerces selon le type de quartier",
+    x = "Années depuis l'ouverture",
+    y = "Probabilité de survie",
+    color = "Type de quartier"
+  ) +
+  theme_minimal()
+```
 
 ```{r}
-table(df_cox$etat)
 
+cox_model <- coxph(
+  Surv(t_debut, t_fin, evenement) ~
+    # Accessibilité 
+    nb_arrets_ratp_p3 +
+    parc_3 +
+    # Concurrence
+    nb_voisins_tous_p3 +
+    nb_voisins_ape_p3 +
+    # Caractéristiques du commerce
+    employeur +          # O/N → sera traité comme facteur automatiquement si character
+    # Contexte macro (time-varying)
+    taux_chomage_annuel +
+    taux_croissance_PIB_annuel,
+    # Contexte local (fixe ou time-varying selon si ça varie)
+  data = df_cox,
+  ties = "efron"  # méthode recommandée en cas d'ex-aequo sur les temps d'événement
+)
+
+summary(cox_model)
+```
+
+```{r}
+broom::tidy(cox_model, exponentiate = TRUE, conf.int = TRUE) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  mutate(across(where(is.numeric), ~round(., 3)))
+```
+
+```{r cox avec interaction}
+
+
+# S'assurer que type_quartier est un facteur avec la bonne référence
+df_cox <- df_cox %>%
+mutate(gentr_type = factor(gentr_type, 
+                             levels = c("populaire", "gentrifié", "aisé")))
+
+cox_interaction <- coxph(
+  Surv(t_debut, t_fin, evenement) ~
+    # Accessibilité 
+    nb_arrets_ratp_p3 +
+    parc_3 + 
+    # Concurrence — AVEC interaction 
+    nb_voisins_tous_p3 * gentr_type +
+    nb_voisins_ape_p3 * gentr_type +
+    # Contrôles
+    employeur +
+    taux_chomage_annuel +
+    taux_croissance_PIB_annuel ,
+  data = df_cox,
+  ties = "efron"
+)
+
+summary(cox_interaction)
+
+# Tableau lisible des HR
+broom::tidy(cox_interaction, exponentiate = TRUE, conf.int = TRUE) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  mutate(across(where(is.numeric), ~round(., 3)))
+```
+
+```         
 ```
