@@ -138,6 +138,10 @@ stats_globales <- df_cox %>%
 
 # Affichage
 print(stats_globales)
+
+
+## Durée de vie moyenne 
+
 ```
 
 ```{r boxplots sur concurrence et accessibilite}
