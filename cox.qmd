@@ -16,13 +16,13 @@ library(ggplot2)
 ```
 
 ```{r}
-base_source_sf <- readRDS("~/work/Projet_gentrification_3A/dtb_poly_annee_geo.rds")
+base_source_sf <- readRDS("dtb_poly_annee_geo.rds")
 df_c_p3 <- readRDS("~/work/Projet_gentrification_3A/df_c_p3.rds")
-df_c_p5 <- readRDS("~/work/Projet_gentrification_3A/df_c_p5.rds")
+#df_c_p5 <- readRDS("~/work/Projet_gentrification_3A/df_c_p5.rds")
 df_cmt_p3 <- readRDS("~/work/Projet_gentrification_3A/df_cmt_p3.rds")
-df_cmt_p5 <- readRDS("~/work/Projet_gentrification_3A/df_cmt_p5.rds")
+#df_cmt_p5 <- readRDS("~/work/Projet_gentrification_3A/df_cmt_p5.rds")
 df_ratp_p3 <- readRDS("~/work/Projet_gentrification_3A/df_ratp_p3.rds")
-df_ratp_p5 <- readRDS("~/work/Projet_gentrification_3A/df_ratp_p5.rds")
+#df_ratp_p5 <- readRDS("~/work/Projet_gentrification_3A/df_ratp_p5.rds")
 
 
 ```
@@ -32,13 +32,9 @@ df_ratp_p5 <- readRDS("~/work/Projet_gentrification_3A/df_ratp_p5.rds")
 configs <- list(
   # Pour p3
   list(df = df_c_p3, col = "nb_voisins_tous", new_name = "nb_voisins_tous_p3"),
-  list(df = df_cmt_p3, col = "nb_voisins_ape", new_name = "nb_voisins_ape_p3"),
-  list(df = df_ratp_p3, col = "nb_arrets_ratp_p3", new_name = "nb_arrets_ratp_p3"),
+ list(df = df_cmt_p3, col = "nb_voisins_ape", new_name = "nb_voisins_ape_p3"),
+  list(df = df_ratp_p3, col = "nb_arrets_ratp_p3", new_name = "nb_arrets_ratp_p3")
   
-  # Pour p5
-  list(df = df_c_p5, col = "nb_voisins_tous", new_name = "nb_voisins_tous_p5"),
-  list(df = df_cmt_p5, col = "nb_voisins_ape", new_name = "nb_voisins_ape_p5"),
-  list(df = df_ratp_p5, col = "nb_arrets_ratp_p5", new_name = "nb_arrets_ratp_p5")
 )
 
 # 2. On initialise notre dataframe de travail
@@ -144,24 +140,6 @@ print(stats_globales)
 
 ```
 
-```{r boxplots sur concurrence et accessibilite}
-# On utilise les données préparées
-ggplot(table1_data, aes(x = gentr_type, y = nb_voisins_tous_p3, fill = gentr_type)) +
-  geom_boxplot(alpha = 0.7, outlier.shape = 16, outlier.size = 1) +
-  scale_fill_manual(values = c("populaire" = "#E74C3C", "gentrifié" = "#F39C12", "aisé" = "#2ECC71")) +
-  labs(
-    title = "Distribution de la concurrence par quartier",
-    subtitle = "Nombre de commerces de même type à proximité",
-    x = "Type de quartier",
-    y = "Nombre de voisins (médiane)",
-    fill = "Quartier"
-  ) +
-  theme_minimal() +
-  theme(legend.position = "none") 
-
-
-
-```
 
 ```{r }
 
@@ -188,6 +166,22 @@ df_cox <- df_final %>%
 df_cox <- df_cox %>% arrange(siret)
 ```
 
+```{r proportion de commerces ayant connu une fermeture}
+total_commerces <- n_distinct(df_cox$siret)
+nombre_fermetures <- df_cox %>% 
+  group_by(siret) %>% 
+  summarise(a_ferme = any(evenement == 1)) %>% 
+  filter(a_ferme == TRUE) %>% 
+  nrow()
+
+proportion_fermetures <- (nombre_fermetures / total_commerces) * 100
+
+cat("Sur un total de", total_commerces, "commerces,\n",
+    nombre_fermetures, "ont connu une fermeture,\n",
+    "soit un taux de mortalité de", round(proportion_fermetures, 1), "%\n")
+```
+
+
 ```{r survie commercial selon type de quartier desc}
  
 
@@ -197,7 +191,7 @@ base_km <- df_cox %>% filter(gentr_type != "autre") %>%
   group_by(siret) %>%
   slice_max(annee) %>%  # dernière observation
   ungroup() %>%
-    filter(t_fin <= 20) 
+    filter(t_fin <= 15) 
 
 
 km_fit <- survfit(

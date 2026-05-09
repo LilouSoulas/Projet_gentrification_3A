@@ -14,7 +14,6 @@ library(readr)
 library(purrr)
 ```
 
-
 ```{r}
 
 base_source_sf <- readRDS("dtb_poly_annee_geo.rds")
@@ -23,7 +22,7 @@ base_source_sf <- readRDS("dtb_poly_annee_geo.rds")
 dir.create("data/sauvegardes_annuelles/tout_commerce", showWarnings = FALSE, 
            recursive = TRUE)
 
-compter_points_production <- function(polygones, points_base, col_geo = "poly_5", prefixe = "p5") {
+compter_points_production <- function(polygones, points_base, col_geo = "poly_3", prefixe = "p3") {
   
   # Harmonisation CRS unique pour éviter de le refaire 600k fois
   message("Harmonisation du CRS...")
@@ -71,7 +70,6 @@ compter_points_production <- function(polygones, points_base, col_geo = "poly_5"
 }
 ```
 
-
 ```{r}
 
 # Calcul pour 3 minutes
@@ -93,4 +91,3 @@ fichiers_p5 <- list.files("data/sauvegardes_annuelles/tout_commerce", pattern = 
 df_final_p5 <- map_df(fichiers_p5, readRDS)
 saveRDS(df_final_p5, "df_c_p5.rds")
 ```
-

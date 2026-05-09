@@ -34,7 +34,7 @@ base_source_sf <- readRDS("dtb_poly_annee_geo.rds")
 dir.create("data/sauvegardes_annuelles", showWarnings = FALSE, 
            recursive = TRUE)
 
-compter_points_production <- function(polygones, points_base, col_geo = "poly_5", prefixe = "p5") {
+compter_points_production <- function(polygones, points_base, col_geo = "poly_3", prefixe = "p3") {
   
   # Harmonisation CRS unique pour éviter de le refaire 600k fois
   message("Harmonisation du CRS...")

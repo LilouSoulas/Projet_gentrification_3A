@@ -35,7 +35,7 @@ The `echo: false` option disables the printing of code (only output is displayed
 dir.create("data/sauvegardes_annuelles/ratp", showWarnings = FALSE,
            recursive = TRUE)
 
-compter_arrets_ratp <- function(polygones, ratp_base, col_geo = "poly_5", prefixe = "p5") {
+compter_arrets_ratp <- function(polygones, ratp_base, col_geo = "poly_3", prefixe = "p3") {
   
   # Harmonisation CRS unique
   message("Harmonisation du CRS...")
