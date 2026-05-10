@@ -29,5 +29,5 @@ L'analyse de la survie des commerces se fait via un modèle de Cox, dont le scri
 
 ### Stockage des données
 
-Les données manipulées sont trop volumineuses pour être stockées sur un repo GitHub. Nous les conservons sur une instance séparée, les bases les plus utiles à la reproduction des résultats sont disponibles [ici]([url](https://drive.google.com/drive/folders/1_xKz9ztRChsU1XzOpgsQyt2fq1Ekwcj0?usp=drive_link)) https://drive.google.com/drive/folders/1_xKz9ztRChsU1XzOpgsQyt2fq1Ekwcj0?usp=drive_link 
+Les données manipulées sont trop volumineuses pour être stockées sur un repo GitHub. Nous les conservons sur une instance séparée, les bases les plus utiles à la reproduction des résultats sont disponibles sur demande [ici]([url](https://drive.google.com/drive/folders/1_xKz9ztRChsU1XzOpgsQyt2fq1Ekwcj0?usp=drive_link)) https://drive.google.com/drive/folders/1_xKz9ztRChsU1XzOpgsQyt2fq1Ekwcj0?usp=drive_link 
 
