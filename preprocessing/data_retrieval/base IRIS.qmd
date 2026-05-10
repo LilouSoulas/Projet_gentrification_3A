@@ -184,24 +184,4 @@ ggplot(geo_1521["geometry"]) +
 
 ```
 
--   Faire une boucle pour importer tous les doc revenus IRIS disponibles et les formater sur le même modèle que IRIS15
 
--   Faire une boucle pour télécharger les contours de chaque année
-
-    -   <https://geoservices.ign.fr/contoursiris>
-
--   Pour chaque année, merge les IRIS avec leurs contours géographiques
-
--   gérer les données manquantes !!!!!
-
--   Pour chaque année classer les IRIS entre en dessous de la médiane (- 5%) ; médiane et au dessus de la médiane (au dessus de 5%)
-
--   Faire une base intertemporelle avec pour chaque IRIS les revenus médian (et autres infos) par année
-
-    -   en panel ? ou avec des colonnes par année ?
-
--   graphique de l'évolution du revenu médian // quartiles de Paris au fil des années
-
--   
-
--   Regrouper les IRIS numérotés en 1 (les halles 1/2/3/4 = les halles) ??
