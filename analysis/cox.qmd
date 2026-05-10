@@ -18,11 +18,8 @@ library(ggplot2)
 ```{r}
 base_source_sf <- readRDS("dtb_poly_annee_geo.rds")
 df_c_p3 <- readRDS("~/work/Projet_gentrification_3A/df_c_p3.rds")
-#df_c_p5 <- readRDS("~/work/Projet_gentrification_3A/df_c_p5.rds")
 df_cmt_p3 <- readRDS("~/work/Projet_gentrification_3A/df_cmt_p3.rds")
-#df_cmt_p5 <- readRDS("~/work/Projet_gentrification_3A/df_cmt_p5.rds")
 df_ratp_p3 <- readRDS("~/work/Projet_gentrification_3A/df_ratp_p3.rds")
-#df_ratp_p5 <- readRDS("~/work/Projet_gentrification_3A/df_ratp_p5.rds")
 
 
 ```
