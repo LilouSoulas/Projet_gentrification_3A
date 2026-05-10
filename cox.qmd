@@ -229,38 +229,9 @@ survfit2(Surv(t_fin, evenement) ~ gentr_type, data = base_km) %>%
   theme_minimal()
 ```
 
-```{r}
-
-cox_model <- coxph(
-  Surv(t_debut, t_fin, evenement) ~
-    # Accessibilité 
-    nb_arrets_ratp_p3 +
-    parc_3 +
-    # Concurrence
-    nb_voisins_tous_p3 +
-    nb_voisins_ape_p3 +
-    # Caractéristiques du commerce
-    employeur +          # O/N → sera traité comme facteur automatiquement si character
-    # Contexte macro (time-varying)
-    taux_chomage_annuel +
-    taux_croissance_PIB_annuel,
-    # Contexte local (fixe ou time-varying selon si ça varie)
-  data = df_cox,
-  ties = "efron"  # méthode recommandée en cas d'ex-aequo sur les temps d'événement
-)
-
-summary(cox_model)
-```
-
-```{r}
-broom::tidy(cox_model, exponentiate = TRUE, conf.int = TRUE) %>%
-  select(term, estimate, conf.low, conf.high, p.value) %>%
-  mutate(across(where(is.numeric), ~round(., 3)))
-```
+## Cox model 
 
 ```{r cox avec interaction}
-
-
 # S'assurer que type_quartier est un facteur avec la bonne référence
 df_cox <- df_cox %>%
 mutate(gentr_type = factor(gentr_type, 
@@ -290,5 +261,78 @@ broom::tidy(cox_interaction, exponentiate = TRUE, conf.int = TRUE) %>%
   mutate(across(where(is.numeric), ~round(., 3)))
 ```
 
-```         
+Cox sans interaction 
+
+```{r}
+
+cox_model_pop <- coxph(
+  Surv(t_debut, t_fin, evenement) ~
+    # Accessibilité 
+    nb_arrets_ratp_p3 +
+    parc_3 +
+    # Concurrence
+    nb_voisins_tous_p3 +
+    nb_voisins_ape_p3 +
+    # Caractéristiques du commerce
+    employeur +         
+    taux_chomage_annuel +
+    taux_croissance_PIB_annuel,
+  data = df_cox %>% filter(gentr_type == "populaire"),
+  ties = "efron"  # méthode recommandée en cas d'ex-aequo sur les temps d'événement
+)
+
+
+broom::tidy(cox_model_pop, exponentiate = TRUE, conf.int = TRUE) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  mutate(across(where(is.numeric), ~round(., 3)))
 ```
+
+```{r}
+
+cox_model_gentr <- coxph(
+  Surv(t_debut, t_fin, evenement) ~
+    # Accessibilité 
+    nb_arrets_ratp_p3 +
+    parc_3 +
+    # Concurrence
+    nb_voisins_tous_p3 +
+    nb_voisins_ape_p3 +
+    # Caractéristiques du commerce
+    employeur +         
+    taux_chomage_annuel +
+    taux_croissance_PIB_annuel,
+  data = df_cox %>% filter(gentr_type == "gentrifié"),
+  ties = "efron"  # méthode recommandée en cas d'ex-aequo sur les temps d'événement
+)
+
+
+broom::tidy(cox_model_gentr, exponentiate = TRUE, conf.int = TRUE) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  mutate(across(where(is.numeric), ~round(., 3)))
+
+
+```
+
+
+```{r}
+cox_model_aise <- coxph(
+  Surv(t_debut, t_fin, evenement) ~
+    # Accessibilité 
+    nb_arrets_ratp_p3 +
+    parc_3 +
+    # Concurrence
+    nb_voisins_tous_p3 +
+    nb_voisins_ape_p3 +
+    # Caractéristiques du commerce
+    employeur +         
+    taux_chomage_annuel +
+    taux_croissance_PIB_annuel,
+  data = df_cox %>% filter(gentr_type == "aisé"),
+  ties = "efron"  # méthode recommandée en cas d'ex-aequo sur les temps d'événement
+)
+
+
+broom::tidy(cox_model_aise, exponentiate = TRUE, conf.int = TRUE) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  mutate(across(where(is.numeric), ~round(., 3)))```
+
